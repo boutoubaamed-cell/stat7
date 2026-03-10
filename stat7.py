@@ -21,6 +21,7 @@ warnings.filterwarnings('ignore')
 STATS_AVAILABLE = False
 PLOTS_AVAILABLE = False
 DOCX_AVAILABLE = False
+EXCEL_AVAILABLE = False
 
 # ============================================
 # Page configuration - MUST BE FIRST STREAMLIT COMMAND
@@ -63,6 +64,14 @@ except ImportError:
         @staticmethod
         def heatmap(*args, **kwargs):
             pass
+
+# Try to import openpyxl for Excel support
+try:
+    import openpyxl
+
+    EXCEL_AVAILABLE = True
+except ImportError:
+    EXCEL_AVAILABLE = False
 
 # Try to import scipy and statsmodels
 try:
@@ -239,6 +248,26 @@ st.markdown("""
     .js-plotly-plot, .plot-container, .stPlotlyChart {
         direction: ltr !important;
     }
+
+    /* Installation instructions */
+    .install-box {
+        background: linear-gradient(135deg, #ff6b6b 0%, #c92a2a 100%);
+        color: white;
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+        margin: 10px 0;
+    }
+    .install-code {
+        background: #2d2d2d;
+        color: #ffd700;
+        padding: 10px;
+        border-radius: 5px;
+        direction: ltr;
+        text-align: left;
+        font-family: monospace;
+        margin: 10px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -278,7 +307,7 @@ CONTACT_EMAIL = "boutoubaamed@gmail.com"
 
 
 # ============================================
-# File upload functions
+# File upload functions with improved error handling
 # ============================================
 @st.cache_data
 def load_csv_with_encoding(file):
@@ -298,16 +327,26 @@ def load_csv_with_encoding(file):
         df = pd.read_csv(file)
         return df, 'default'
     except Exception as e:
-        raise Exception(f"تعذر قراءة الملف: {str(e)}")
+        raise Exception(f"تعذر قراءة ملف CSV: {str(e)}")
 
 
 def load_excel_file(file):
-    """Load Excel file with error handling"""
+    """Load Excel file with error handling and dependency check"""
+    if not EXCEL_AVAILABLE:
+        raise ImportError("مكتبة openpyxl غير مثبتة. لقراءة ملفات Excel، يرجى تثبيتها باستخدام: pip install openpyxl")
+
     try:
-        df = pd.read_excel(file)
+        # Try with openpyxl first
+        df = pd.read_excel(file, engine='openpyxl')
         return df
-    except Exception as e:
-        raise Exception(f"خطأ في قراءة ملف Excel: {str(e)}")
+    except:
+        try:
+            # Fallback to default engine
+            file.seek(0)
+            df = pd.read_excel(file)
+            return df
+        except Exception as e:
+            raise Exception(f"خطأ في قراءة ملف Excel: {str(e)}")
 
 
 def validate_dataframe(df):
@@ -336,6 +375,138 @@ def ensure_numeric(df, columns):
         if col in numeric_df.columns:
             numeric_df[col] = pd.to_numeric(numeric_df[col], errors='coerce')
     return numeric_df
+
+
+# ============================================
+# Show library availability warnings and installation instructions
+# ============================================
+with st.sidebar:
+    st.markdown("### 📦 المكتبات المطلوبة")
+
+    if not EXCEL_AVAILABLE:
+        st.markdown("""
+        <div class='install-box'>
+            <strong>⚠️ دعم Excel غير متوفر</strong>
+        </div>
+        <div class='install-code'>
+            pip install openpyxl
+        </div>
+        """, unsafe_allow_html=True)
+
+    if not PLOTS_AVAILABLE:
+        st.markdown("""
+        <div class='install-box'>
+            <strong>⚠️ الرسوم البيانية غير متوفرة</strong>
+        </div>
+        <div class='install-code'>
+            pip install matplotlib seaborn
+        </div>
+        """, unsafe_allow_html=True)
+
+    if not STATS_AVAILABLE:
+        st.markdown("""
+        <div class='install-box'>
+            <strong>⚠️ الاختبارات الإحصائية غير متوفرة</strong>
+        </div>
+        <div class='install-code'>
+            pip install scipy statsmodels
+        </div>
+        """, unsafe_allow_html=True)
+
+    if not DOCX_AVAILABLE:
+        st.markdown("""
+        <div class='install-box'>
+            <strong>⚠️ تصدير Word غير متوفر</strong>
+        </div>
+        <div class='install-code'>
+            pip install python-docx
+        </div>
+        """, unsafe_allow_html=True)
+
+# ============================================
+# Sidebar - File Upload with Arabic text
+# ============================================
+with st.sidebar:
+    st.markdown("---")
+    st.markdown("""
+    <div style='text-align: center; padding: 10px; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); border-radius: 10px; margin-bottom: 20px;'>
+        <h3 style='color: white;'>📂 تحميل البيانات</h3>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # File uploader with Arabic text
+    uploaded_file = st.file_uploader(
+        "اختر ملف البيانات",  # بالعربية
+        type=['xlsx', 'xls', 'csv'],
+        help="اسحب وأفلت الملف هنا أو اضغط للاختيار"
+    )
+
+    # Show uploaded file info in Arabic
+    if uploaded_file is not None:
+        file_size = uploaded_file.size / 1024
+        st.markdown(f"""
+        <div class='uploadedFile'>
+            <strong>الملف المرفوع:</strong> {uploaded_file.name}<br>
+            <strong>الحجم:</strong> {file_size:.1f} كيلوبايت<br>
+            <strong>النوع:</strong> {uploaded_file.type}
+        </div>
+        """, unsafe_allow_html=True)
+
+    if st.button("🗑️ مسح الملف", use_container_width=True):
+        st.session_state.data_loaded = False
+        st.session_state.df = None
+        st.session_state.show_results = False
+        st.session_state.uploaded_filename = None
+        st.rerun()
+
+    if uploaded_file is not None:
+        try:
+            if st.session_state.uploaded_filename != uploaded_file.name:
+                with st.spinner('جاري تحميل البيانات...'):
+                    file_extension = uploaded_file.name.split('.')[-1].lower()
+
+                    if file_extension == 'csv':
+                        df, encoding = load_csv_with_encoding(uploaded_file)
+                        st.success(f"✅ تم تحميل CSV بترميز {encoding}")
+                    else:
+                        # Check if Excel support is available
+                        if not EXCEL_AVAILABLE:
+                            st.error("❌ لا يمكن قراءة ملفات Excel. الرجاء تثبيت مكتبة openpyxl")
+                            st.info("للتثبيت: pip install openpyxl")
+                            st.stop()
+
+                        df = load_excel_file(uploaded_file)
+                        st.success("✅ تم تحميل Excel بنجاح")
+
+                    is_valid, issues = validate_dataframe(df)
+
+                    if is_valid:
+                        st.session_state.df = df
+                        st.session_state.data_loaded = True
+                        st.session_state.uploaded_filename = uploaded_file.name
+
+                        st.success(f"✅ {len(df)} سجل و {len(df.columns)} متغير")
+
+                        with st.expander("🔍 معاينة البيانات"):
+                            st.dataframe(df.head(5), use_container_width=True)
+                    else:
+                        for issue in issues:
+                            st.error(issue)
+
+        except ImportError as e:
+            st.error(f"❌ {str(e)}")
+            st.info("قم بتثبيت المكتبة المطلوبة باستخدام الأمر أعلاه")
+        except Exception as e:
+            st.error(f"❌ خطأ: {str(e)}")
+
+    # Quick contact in sidebar
+    st.markdown("---")
+    st.markdown("""
+    <div style='text-align: center; padding: 10px; background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%); border-radius: 10px;'>
+        <h4 style='color: white;'>📧 للاستفسارات</h4>
+        <p style='color: #ffd700; font-size: 1.1em; direction: ltr;'>boutoubaamed@gmail.com</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # ============================================
@@ -1044,93 +1215,6 @@ def create_word_report(df, social_vars, factors, factor_trends):
         st.error(f"خطأ في إنشاء تقرير Word: {str(e)}")
         return None
 
-
-# ============================================
-# Show library availability warnings
-# ============================================
-if not PLOTS_AVAILABLE:
-    st.sidebar.info("📊 لعرض الرسوم البيانية، قم بتثبيت: pip install matplotlib seaborn")
-
-if not STATS_AVAILABLE:
-    st.sidebar.info("🔬 لتفعيل الاختبارات الإحصائية، قم بتثبيت: pip install scipy statsmodels")
-
-if not DOCX_AVAILABLE:
-    st.sidebar.info("📝 لتصدير تقارير Word، قم بتثبيت: pip install python-docx")
-
-# ============================================
-# Sidebar - File Upload with Arabic text
-# ============================================
-with st.sidebar:
-    st.markdown("""
-    <div style='text-align: center; padding: 10px; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); border-radius: 10px; margin-bottom: 20px;'>
-        <h3 style='color: white;'>📂 تحميل البيانات</h3>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # File uploader with Arabic text
-    uploaded_file = st.file_uploader(
-        "اختر ملف البيانات",  # بالعربية
-        type=['xlsx', 'xls', 'csv'],
-        help="اسحب وأفلت الملف هنا أو اضغط للاختيار"
-    )
-
-    # Show uploaded file info in Arabic
-    if uploaded_file is not None:
-        file_size = uploaded_file.size / 1024
-        st.markdown(f"""
-        <div class='uploadedFile'>
-            <strong>الملف المرفوع:</strong> {uploaded_file.name}<br>
-            <strong>الحجم:</strong> {file_size:.1f} كيلوبايت<br>
-            <strong>النوع:</strong> {uploaded_file.type}
-        </div>
-        """, unsafe_allow_html=True)
-
-    if st.button("🗑️ مسح الملف", use_container_width=True):
-        st.session_state.data_loaded = False
-        st.session_state.df = None
-        st.session_state.show_results = False
-        st.session_state.uploaded_filename = None
-        st.rerun()
-
-    if uploaded_file is not None:
-        try:
-            if st.session_state.uploaded_filename != uploaded_file.name:
-                with st.spinner('جاري تحميل البيانات...'):
-                    file_extension = uploaded_file.name.split('.')[-1].lower()
-
-                    if file_extension == 'csv':
-                        df, encoding = load_csv_with_encoding(uploaded_file)
-                        st.success(f"✅ تم تحميل CSV بترميز {encoding}")
-                    else:
-                        df = load_excel_file(uploaded_file)
-                        st.success("✅ تم تحميل Excel بنجاح")
-
-                    is_valid, issues = validate_dataframe(df)
-
-                    if is_valid:
-                        st.session_state.df = df
-                        st.session_state.data_loaded = True
-                        st.session_state.uploaded_filename = uploaded_file.name
-
-                        st.success(f"✅ {len(df)} سجل و {len(df.columns)} متغير")
-
-                        with st.expander("🔍 معاينة البيانات"):
-                            st.dataframe(df.head(5), use_container_width=True)
-                    else:
-                        for issue in issues:
-                            st.error(issue)
-
-        except Exception as e:
-            st.error(f"❌ خطأ: {str(e)}")
-
-    # Quick contact in sidebar
-    st.markdown("---")
-    st.markdown("""
-    <div style='text-align: center; padding: 10px; background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%); border-radius: 10px;'>
-        <h4 style='color: white;'>📧 للاستفسارات</h4>
-        <p style='color: #ffd700; font-size: 1.1em; direction: ltr;'>boutoubaamed@gmail.com</p>
-    </div>
-    """, unsafe_allow_html=True)
 
 # ============================================
 # Main content
